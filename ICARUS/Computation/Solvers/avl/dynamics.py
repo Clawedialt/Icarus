@@ -73,12 +73,8 @@ def eigpro(st, lines):
     long_vecs = np.zeros((4, 2))
     lat_vecs = np.zeros((4, 2))
     for i in range(0, 4):
-        long_vecs[i, :] = np.array(
-            [float(lines[st + i + 1][9:15]), float(lines[st + i + 1][20:26])]
-        )
-        lat_vecs[i, :] = np.array(
-            [float(lines[st + i + 1][41:47]), float(lines[st + i + 1][52:58])]
-        )
+        long_vecs[i, :] = np.array([float(lines[st + i + 1][9:15]), float(lines[st + i + 1][20:26])])
+        lat_vecs[i, :] = np.array([float(lines[st + i + 1][41:47]), float(lines[st + i + 1][52:58])])
 
     return long_vecs, lat_vecs, mode
 
@@ -209,7 +205,7 @@ def finite_difs(plane, u_ar, v_ar, w_ar, q_ar, p_ar, r_ar, trim_conditions):
         li.append(f"{f_u_ang}")
         li.append("x")
         li.append("FT")
-        f_u = f"{plane.name}_dif_f_u_{u}"
+        f_u = f"{plane.name}_dif_f_u_{str(u).zfill(6)}"
         li.append(f_u)
         li.append("+")
         li.append(f"{int(case_num+1)}")
@@ -219,7 +215,7 @@ def finite_difs(plane, u_ar, v_ar, w_ar, q_ar, p_ar, r_ar, trim_conditions):
         li.append(f"{b_u_ang}")
         li.append("x")
         li.append("FT")
-        b_u = f"{plane.name}_dif_b_u_{u}"
+        b_u = f"{plane.name}_dif_b_u_{str(u).zfill(6)}"
         li.append(b_u)
 
         ar_2 = np.array(li)
@@ -239,7 +235,7 @@ def finite_difs(plane, u_ar, v_ar, w_ar, q_ar, p_ar, r_ar, trim_conditions):
         li.append(f"{(q*plane.mean_aerodynamic_chord/(2*trim_conditions[1]))}")
         li.append("x")
         li.append("FT")
-        f_q = f"{plane.name}_dif_f_q_{q}"
+        f_q = f"{plane.name}_dif_f_q_{str(q).zfill(6)}"
         li.append(f_q)
 
         li.append("+")
@@ -253,7 +249,7 @@ def finite_difs(plane, u_ar, v_ar, w_ar, q_ar, p_ar, r_ar, trim_conditions):
         li.append(f"{-(q*plane.mean_aerodynamic_chord/(2*trim_conditions[1]))}")
         li.append("x")
         li.append("FT")
-        b_q = f"{plane.name}_dif_b_q_{q}"
+        b_q = f"{plane.name}_dif_b_q_{str(q).zfill(6)}"
         li.append(b_q)
 
         ar_3 = np.array(li)
@@ -276,7 +272,7 @@ def finite_difs(plane, u_ar, v_ar, w_ar, q_ar, p_ar, r_ar, trim_conditions):
         li.append(f"{f_ang}")
         li.append("x")
         li.append("FT")
-        f_v = f"{plane.name}_dif_f_v_{v}"
+        f_v = f"{plane.name}_dif_f_v_{str(v).zfill(6)}"
         li.append(f_v)
 
         li.append("+")
@@ -291,7 +287,7 @@ def finite_difs(plane, u_ar, v_ar, w_ar, q_ar, p_ar, r_ar, trim_conditions):
         li.append(f"{b_ang}")
         li.append("x")
         li.append("FT")
-        b_v = f"{plane.name}_dif_b_v_{v}"
+        b_v = f"{plane.name}_dif_b_v_{str(v).zfill(6)}"
         li.append(b_v)
         ar_4 = np.array(li)
 
@@ -311,7 +307,7 @@ def finite_difs(plane, u_ar, v_ar, w_ar, q_ar, p_ar, r_ar, trim_conditions):
         li.append(f"{(p*plane.span/(2*trim_conditions[1]))}")
         li.append("x")
         li.append("FT")
-        f_p = f"{plane.name}_dif_f_p_{p}"
+        f_p = f"{plane.name}_dif_f_p_{str(p).zfill(6)}"
         li.append(f_p)
         li.append("+")
         li.append(f"{int(case_num+1)}")
@@ -327,7 +323,7 @@ def finite_difs(plane, u_ar, v_ar, w_ar, q_ar, p_ar, r_ar, trim_conditions):
         li.append(f"{-(p*plane.span/(2*trim_conditions[1]))}")
         li.append("x")
         li.append("FT")
-        b_p = f"{plane.name}_dif_b_p_{p}"
+        b_p = f"{plane.name}_dif_b_p_{str(p).zfill(6)}"
         li.append(b_p)
         ar_5 = np.array(li)
 
@@ -350,7 +346,7 @@ def finite_difs(plane, u_ar, v_ar, w_ar, q_ar, p_ar, r_ar, trim_conditions):
         li.append(f"{(r*plane.span/(2*trim_conditions[1]))}")
         li.append("x")
         li.append("FT")
-        f_r = f"{plane.name}_dif_f_r_{r}"
+        f_r = f"{plane.name}_dif_f_r_{str(r).zfill(6)}"
         li.append(f_r)
         li.append("+")
         li.append(f"{int(case_num+1)}")
@@ -366,7 +362,7 @@ def finite_difs(plane, u_ar, v_ar, w_ar, q_ar, p_ar, r_ar, trim_conditions):
         li.append(f"{-(r*plane.span/(2*trim_conditions[1]))}")
         li.append("x")
         li.append("FT")
-        b_r = f"{plane.name}_dif_b_r_{r}"
+        b_r = f"{plane.name}_dif_b_r_{str(r).zfill(6)}"
         li.append(b_r)
         li.append("    ")
         li.append("quit")
@@ -383,9 +379,7 @@ def finite_difs(plane, u_ar, v_ar, w_ar, q_ar, p_ar, r_ar, trim_conditions):
 
 # LONGITUDAL STATE MATRIX USING FINITE DIFFERENCE STABILITY DERIVATIVES -
 # EXECUTION OF POSTPRROCESSING FUNCTION NECESSARY
-def long_mat(
-    plane, environment, aoa_trim, trim_Vel, u_dict, I_li, w_dict, q_dict, span=4.4
-):
+def long_mat(plane, environment, aoa_trim, trim_Vel, u_dict, I_li, w_dict, q_dict, span=4.4):
     mass = plane.M
     rho = environment.air_density
     g = environment.GRAVITY
@@ -479,9 +473,7 @@ def long_mat(
 
 
 # LATERAL STATE MATRIX USING FINITE DIFFERENCE STABILITY DERIVATIVES
-def lat_mat(
-    plane, environment, aoa_trim, trim_Vel, v_dict, I_li, p_dict, r_dict, span=4.4
-):
+def lat_mat(plane, environment, aoa_trim, trim_Vel, v_dict, I_li, p_dict, r_dict, span=4.4):
     # good inc = 0.005*U
 
     mass = plane.M
@@ -551,28 +543,16 @@ def lat_mat(
     state_mat = np.zeros((4, 4))
 
     state_mat[0, 0] = Y_v / mass
-    state_mat[1, 0] = (I_li[2] * l_v + (I_li[3]) * n_v) / (
-        I_li[0] * I_li[2] - I_li[3] ** 2
-    )
-    state_mat[2, 0] = (I_li[0] * n_v + (I_li[3]) * l_v) / (
-        I_li[0] * I_li[2] - I_li[3] ** 2
-    )
+    state_mat[1, 0] = (I_li[2] * l_v + (I_li[3]) * n_v) / (I_li[0] * I_li[2] - I_li[3] ** 2)
+    state_mat[2, 0] = (I_li[0] * n_v + (I_li[3]) * l_v) / (I_li[0] * I_li[2] - I_li[3] ** 2)
 
     state_mat[0, 1] = (Y_p + mass * W_e) / mass
-    state_mat[1, 1] = (I_li[2] * l_p + (I_li[3]) * n_p) / (
-        I_li[0] * I_li[2] - I_li[3] ** 2
-    )
-    state_mat[2, 1] = (I_li[0] * n_p + -(I_li[3]) * l_p) / (
-        I_li[0] * I_li[2] - I_li[3] ** 2
-    )
+    state_mat[1, 1] = (I_li[2] * l_p + (I_li[3]) * n_p) / (I_li[0] * I_li[2] - I_li[3] ** 2)
+    state_mat[2, 1] = (I_li[0] * n_p + -(I_li[3]) * l_p) / (I_li[0] * I_li[2] - I_li[3] ** 2)
 
     state_mat[0, 2] = (Y_r - mass * U_e) / mass
-    state_mat[1, 2] = (I_li[2] * l_r + (I_li[3]) * n_r) / (
-        I_li[0] * I_li[2] - I_li[3] ** 2
-    )
-    state_mat[2, 2] = (I_li[0] * n_r + (I_li[3]) * l_r) / (
-        I_li[0] * I_li[2] - I_li[3] ** 2
-    )
+    state_mat[1, 2] = (I_li[2] * l_r + (I_li[3]) * n_r) / (I_li[0] * I_li[2] - I_li[3] ** 2)
+    state_mat[2, 2] = (I_li[0] * n_r + (I_li[3]) * l_r) / (I_li[0] * I_li[2] - I_li[3] ** 2)
 
     state_mat[3, 0] = 0
     state_mat[3, 1] = 1
