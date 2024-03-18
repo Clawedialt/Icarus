@@ -1,0 +1,433 @@
+"""This module defines the hermes plane object."""
+import numpy as np
+
+from ICARUS.Core.types import FloatArray
+from ICARUS.Vehicle.lifting_surface import Lifting_Surface
+from ICARUS.Vehicle.plane import Airplane
+from ICARUS.Vehicle.utils import SymmetryAxes
+from ICARUS.Vehicle.wing_segment import Wing_Segment
+from ICARUS.Vehicle.merged_wing import MergedWing
+
+#aboud grid
+cells_per_wing_x = 20
+cells_per_wing_y = 5 
+
+# origin at chargo_start
+const_cargo_length = 0.565
+const_cargo_width = 0.160
+const_node_offset_max = 0.3 #ask if its okay to use nose_x_max as fixed for wingspan_max
+const_mass_per_wing = 0.35
+const_total_rows = 9 #this gives the payload
+const_payload_ydist = 0.04
+const_payload_xdist = 0.06
+const_payload_offset = 0.025 #offset of front / back payload
+mass_tail = 0.15
+mass_wing = 0.7 
+masses_point = 5.2  #TODO CHECK ME simiakes mazes
+AR = 9
+WCL = 14.9213
+m = mass_tail + mass_wing + masses_point
+S =(144e0 / 1550e0) * pow(((m * 35.27) / WCL), 2e0 / 3)
+wingspan = np.sqrt(AR*S)
+print("\n---------General dimensions--------------")
+print("total mass", m)
+print("total wing area", S)
+print("wingspan", wingspan, "< ", 3*(const_cargo_length+const_node_offset_max), "\n")
+
+
+bounds = {
+    "motor_x_clearance" : np.array([0.050, 0.220]),
+    "nose_x" :np.array([-0.18, -const_node_offset_max]),
+    #tail
+    "tail_pos_x" : np.array([const_cargo_length +  0.200, const_cargo_length + 0.800]),
+    "vtail_elev_volume" : np.array([0.5, 0.6]), #
+    "vtail_AR" : np.array([1., 2.]),
+    "vtail_angle" : np.array([40, 60]),   
+    #main wing
+    "main_wing_LE_x" : np.array([0, 0.54]),
+    "chord_1" : np.array([0.25, 0.4]),
+    "chord_3" :np.array([0.1, 0.2]),
+    "length_1_perc" : np.array([0.1, 0.7]),
+    "length_3_perc": np.array([0.1, 0.7]),  #constraint for these 2
+    "incidence_angle" : np.array([-2.,2.]),
+    "twist" : np.array([-2., 0.]),
+    "dihedral" : np.array([0., 2.]),
+    "offset_perc": np.array([0., 1.]),
+    #control surfaces
+    "flap_L_perc" : np.array([0.1, 0.6]), 
+    "flap_area_perc": np.array([0.05, 0.2]),
+    "ail_area_perc" :np.array([0.05, 0.15]),
+}
+
+
+def constraints(wingspan, flap_L, ail_L, main_wing_LE_x, chord_1, chord_2, length_1_perc, length_3_perc):
+    fixed_cargo_length_total = const_cargo_length+const_node_offset_max
+   #constraint 0 : check if inputs are correct
+    if ( ( length_1_perc + length_3_perc) > 1 ): #check in case a negative length was calculated
+        print("CONSTRAINT ERROR: length's percentages are not correct...")
+        return False
+   #constraint 1: wingspan <= 3*(fixed_cargo_length_total)
+    if (wingspan > 3*fixed_cargo_length_total): #total wingspan
+        print("CONSTRAINT ERROR: wingspan > 3*fixed cargo lenth total")
+        return False
+    #constraint 2: ail_L <= 1*(cargo length total) && flap_L <= 0.5*(cargo length total)
+    if ( (ail_L > fixed_cargo_length_total) or (flap_L > 0.5*fixed_cargo_length_total) ):
+        print("CONSTRAINT ERROR: flap_L > 0.5*fixed cargo lenth total or ail_L > fixed cargo lenth total  ")
+        print("flap_L", flap_L, "ail_L", ail_L, "cargo_total", fixed_cargo_length_total)
+        return False
+    #constraint3: position of wing 
+    if ( (main_wing_LE_x + chord_1 ) > const_cargo_length ):    
+        print("CONSTRAINT ERROR: wing's TE cant be placed on fuselage, ") 
+        return False
+    #constraint4: numerical errors
+    if (chord_2 < 0 ):
+        print("chord negative..")
+        return False
+    
+    return True
+
+def trap(c1, c2, length):
+    area = length*(c1+c2)/2
+    print("area", area)
+    return area
+
+def sweep_grad(c1, c2, length):
+    grad = (c2 - c1)/length
+    return grad
+
+def createSegments(chord_1, chord_2, chord_3, length_1, length_2, length_3, flap_L, wingspan, S, mass_wing, incidence_angle, twist,
+                   offset_percentage):
+    error = 0.005
+
+    num_of_sections = 3
+    idx_new_section = 0         #which segment will be cut 
+    # check first if its not necessary to break it to 4 segments
+    if (abs(flap_L - length_1) < error):
+        flap_L = length_1
+        idx_new_section = 0
+    elif (abs(flap_L - (length_1+length_2))< error):
+        flap_L = length_1 + length_2
+        idx_new_section = 1
+    else:
+        num_of_sections = 4
+
+
+    #3 segments will become 4 
+    init_segment_sweep = np.array([0., sweep_grad(chord_1, chord_2, length_2), sweep_grad(chord_2, chord_3, length_3)])
+    segment_section_chord = np.array([chord_1, chord_1, chord_2, chord_3])
+
+    segment_length = np.empty(num_of_sections, dtype=float)
+    segment_control = np.empty(num_of_sections, dtype=str)
+    segment_control[0] = "flap"
+    segment_control[-1] = "ail"
+
+    if (num_of_sections == 4):
+        if (flap_L < length_1 - error):
+            idx_new_section = 0
+        elif ( (flap_L < (length_1 + length_2 - error)) and (flap_L > (length_1 + error)) ):
+            idx_new_section = 1
+        else:
+            idx_new_section = 2
+
+        #"cut" one of the segments to create 4 segments from 3
+        if (idx_new_section == 0):
+            segment_length[0] = flap_L
+            segment_length[1] = length_1 - flap_L
+
+            segment_length[2] = length_2
+            segment_length[3] = length_3
+            segment_control[1] = "ail"
+            segment_control[2] = "ail"
+            segment_section_chord = np.insert(segment_section_chord, idx_new_section + 1, chord_1)
+        elif(idx_new_section == 1):
+            segment_length[0] = length_1
+
+            segment_length[1] = flap_L - segment_length[0]
+            segment_length[2] = length_1 + length_2 - (segment_length[0] + segment_length[1])
+
+            segment_length[3] = length_3
+            segment_control[1] = "flap"
+            segment_control[2] = "ail"
+            chord_temp = segment_section_chord[idx_new_section] + segment_length[idx_new_section]*np.tan(init_segment_sweep[idx_new_section])
+            segment_section_chord = np.insert(segment_section_chord, idx_new_section + 1, chord_temp)
+        else:
+            segment_length[0] = length_1
+            segment_length[1] = length_2
+
+            segment_length[2] = flap_L - (segment_length[0] + segment_length[1])
+            segment_length[3] = wingspan/2 - (segment_length[0] + segment_length[1] + segment_length[2])
+
+            segment_control[1] = "flap"
+            segment_control[2] = "flap"
+
+            segment_sweep = np.insert(segment_sweep, idx_new_section, segment_sweep[idx_new_section])
+            print("test " , segment_length, "idx", idx_new_section)
+            chord_temp = segment_section_chord[idx_new_section] + segment_length[idx_new_section]*np.tan(init_segment_sweep[idx_new_section])
+            segment_section_chord = np.insert(segment_section_chord, idx_new_section + 1, chord_temp)
+    else:
+        if (idx_new_section == 0):
+            segment_control[1] = "ail"
+        else:
+            segment_control[1] =  "flap"
+        segment_length = [length_1, length_2, length_3]
+
+    #additional 
+    segment_mass = np.empty(num_of_sections, dtype=float)
+    segment_section_angle= np.empty(num_of_sections+1, dtype=float)
+    segment_section_angle[0] = incidence_angle
+
+
+    for i in range(1,len(segment_section_angle)):
+        length_temp = 0
+        for j in range(1, i+1):
+            length_temp += segment_length[j-1]
+        segment_section_angle[i] = incidence_angle - twist*length_temp
+
+
+    surf_total = 0.
+    for i in range(0,len(segment_length)):
+        surface_instance = trap(segment_section_chord[i], segment_section_chord[i+1],segment_length[i])
+        segment_mass[i] = (surface_instance*mass_wing/(S/2))
+        surf_total += surface_instance
+
+
+
+    section_offset_x = np.array([0.,0.,0.,0.,0.])
+    for i in range(1,len(segment_length) + 1):
+        max_offset = chord_1 - segment_section_chord[i]
+        section_offset_x[i] = max_offset*offset_percentage
+
+
+    #print("incidence angle", incidence_angle)
+    #print("segment section angle")
+    #print(segment_section_angle)
+    # print("length_1", length_1, "length_2", length_2, "length_3", length_3)
+    # print("flap_L", flap_L)
+    # print("index ", idx_new_section)
+    # print("segment_control", segment_control)
+    # # #print(segment_sweep)
+    print("\n\n---------------------------")
+    print("number of sections", num_of_sections)
+    print("\n\n\ntesttttttttttt total wing mass", mass_wing) 
+    print("segments surface", surf_total, "/", S/2, "\n") 
+    print("segment_mass", segment_mass, "\n\n\n")
+    # print("\nchords", chord_1, chord_2, chord_3)
+    # print("section_chords", segment_section_chord)
+    # print("segment length", segment_length)
+    # print("segment_mass", segment_mass, "\n\n\n")
+
+    # print("segment sweep", init_segment_sweep)
+
+    print("!!!!!!!!!!!!!section_offset", section_offset_x)
+    return segment_length, segment_mass, segment_section_chord, segment_section_angle, section_offset_x
+
+#---------------------DEFINING AIRPLANE---------------#
+def hermes_449(
+    name: str,
+    #fuselage/tail distnace
+    motor_x_clearance,
+    nose_x,
+    tail_pos_x,
+    #tail characteristics 
+    vtail_elev_volume,
+    vtail_AR,
+    vtail_angle,
+    #main wing lengths
+    main_wing_LE_x, #upper bound dependant on chord_1. Can have static bounds and kill if constraint isnt met ???
+    chord_1, chord_3,
+    length_1_perc, length_3_perc,
+    incidence_angle,
+    twist,
+    dihedral,
+    offset_perc,
+    #main wing control_surfaces (kai  kopsimata)
+    flap_L_perc,
+    flap_area_perc,
+    ail_area_perc,
+    #main wing angles
+) -> Airplane:
+    """
+    Function to get the hermes plane.
+    Consisting of the main wing, elevator rudder and masses as constructed.
+
+    Args:
+        name (str): Name of the plane
+
+    Returns:
+        Airplane: hermes Airplane object
+    """
+    
+    # CALCULATE MAIN WING
+    flap_L = flap_L_perc*wingspan/2
+    ail_L = wingspan/2 - flap_L
+    flap_W = S*flap_area_perc/flap_L
+
+    length_1 = length_1_perc*wingspan/2
+    length_3 = length_3_perc*wingspan/2
+    length_2 = wingspan/2 - length_1 - length_3
+    temp = length_2/2 + length_3/2
+    chord_2 = (S/2 - chord_1*length_1 - chord_1*length_2/2 - chord_3*length_3/2)/temp
+
+    Snew = trap(chord_1, chord_1, length_1) + trap(chord_1, chord_2, length_2) + trap(chord_2, chord_3, length_3)
+    print("check area S ", S/2, " = ", Snew)
+    # CHECK CONSTRAINTS
+    isValid = constraints(wingspan, flap_L, ail_L, main_wing_LE_x, chord_1, chord_2, length_1_perc, length_3_perc)
+    if (isValid):
+        print("constraints are met")
+    else:
+        print("ERROR: SOS CONTRAINTS ARE NOT MET ")
+        return
+    
+
+    origin: FloatArray = np.array([0.0, 0.0, 0.0], dtype=float)
+    #--------->DEFINE MASSES
+    point_masses = [
+        (0.205, np.array([ nose_x - motor_x_clearance, 0.0, 0.0], dtype=float), "engine"), 
+
+        ((0.80+0.165), np.array([(-nose_x/2 ), 0.0, 0.0], dtype=float), "electronics"), # TODO CHECKME ???
+    ]
+    #flap servos
+    ytemp = (const_cargo_width/2 + 0.075)
+    ztemp =  ytemp*np.sin(np.deg2rad(float(dihedral)))
+    point_masses.append((0.280, np.array([ main_wing_LE_x + chord_1 - flap_W, ytemp,  ztemp], dtype=float), "servo flap right"))
+    point_masses.append((0.280, np.array([ main_wing_LE_x + chord_1 - flap_W, -ytemp, ztemp], dtype=float), "servo flap left"))
+    #aileron servos
+    ytemp = (const_cargo_width/2+ flap_L + 0.075)
+    ztemp =  ytemp*np.sin(np.deg2rad(float(dihedral)))
+    point_masses.append((0.020, np.array([ main_wing_LE_x + chord_1 - flap_W, +ytemp,  ztemp], dtype=float), "servo ail right"))
+    point_masses.append((0.020, np.array([ main_wing_LE_x + chord_1 - flap_W, -ytemp,  ztemp], dtype=float), "servo ail left"))
+
+
+    #find the front rows ( ipothetoume oti tha mpei i mpouma sto 1/2 tou chord_root. meta strogkilopioume afou einai
+    #diakrites oi theseis twn mpalwn)
+    float_num_of_front_rows = const_payload_ydist/2 +  ( (main_wing_LE_x + chord_1/2)/const_payload_ydist - 1)
+    num_of_front_rows = round(float_num_of_front_rows)
+    print("\nnum_of_front_rows", float_num_of_front_rows, "->", num_of_front_rows, "\n")
+    for i in range(0, num_of_front_rows):
+        point_masses.append((0.175, np.array([const_payload_xdist*i, const_payload_ydist, 0.0], dtype=float), f"ball_{2*i+1}"))
+        point_masses.append((0.175, np.array([const_payload_xdist*i, -const_payload_ydist, 0.0], dtype=float), f"ball_{2*i+2}"))
+    for i in range(0, const_total_rows - num_of_front_rows):
+        point_masses.append((0.175, np.array([const_payload_offset + const_payload_xdist * (i+num_of_front_rows), const_payload_ydist, 0.0], 
+                                             dtype=float), f"ball_{num_of_front_rows + 2*i+1}"))
+        point_masses.append((0.175, np.array([const_payload_offset + const_payload_xdist * (i+num_of_front_rows), -const_payload_ydist, 0.0],
+                                             dtype=float), f"ball_{num_of_front_rows + 2*i+1}"))
+        
+
+    #--------->DEFINE MAIN WING
+    segment_length, segment_mass, segment_section_chord, segment_section_angle, section_offset_x = createSegments(
+                                                                chord_1, chord_2, chord_3, length_1, length_2, length_3, flap_L, 
+                                                                wingspan, S, mass_wing, incidence_angle, twist, offset_perc)
+    # MAIN WING SEGMENTS
+    main_wing_segments = []
+    for i in range(0,len(segment_length)):
+        segment_name = f"segment_{i+1}"
+        #handle ypos
+        ypos_instance_temp = 0
+        for j in range(0,i+1):
+            ypos_instance_temp += segment_length[j]
+        ypos_instance_temp -= segment_length[i]
+        
+        segment_position: FloatArray = np.array(
+            [ section_offset_x[i], 
+             ypos_instance_temp*np.cos(np.deg2rad(float(dihedral))) + const_cargo_width/2, 
+             ypos_instance_temp*np.sin(np.deg2rad(float(dihedral)))],
+            dtype=float,
+        )
+
+        segment_orientation: FloatArray = np.array(
+            [0., 0., dihedral],
+            dtype=float,
+        )
+
+        #handle grid 
+        nodes_x =  round( cells_per_wing_x*2*segment_length[i]/(wingspan) )
+        if (nodes_x < 2):
+            nodes_x = 2
+        segment = Wing_Segment(
+            name=segment_name,
+            root_airfoil="NACA4415",
+            origin= origin + segment_position,
+            symmetries=SymmetryAxes.Y,
+            orientation=segment_orientation,
+            span = 2*segment_length[i],
+            sweep_offset= section_offset_x[i + 1], #TODO THIS 
+            root_chord=segment_section_chord[i],
+            tip_chord=segment_section_chord[i+1],
+            twist_root=segment_section_angle[i],   #TODO THIS
+            twist_tip=segment_section_angle[i+1],    #TODO THIS
+            N=nodes_x,
+            M=cells_per_wing_y + 1,
+            mass=10#2*segment_mass[i],
+        )
+        print("mass ", 2*segment_mass[i])
+        main_wing_segments.append(segment)
+   
+    main_wing = MergedWing(
+        "Main Wing",
+        main_wing_segments,
+    )
+    
+
+    MAC = main_wing_segments[0].mean_aerodynamic_chord #segment.mean_aerodynamic_chord() #TODO SOS CHANGE ME 
+    ht_S = vtail_elev_volume*MAC*S/tail_pos_x
+    vtail_S = ht_S/pow(np.cos(np.deg2rad(vtail_angle)),2)
+    vt_S = vtail_S - ht_S
+    vtail_rudder_volume = vt_S*tail_pos_x/(wingspan*S)
+
+    vtail_span = np.sqrt(vtail_S * vtail_AR)
+    vtail_chord = vtail_S/vtail_span #for orthogonal vtail
+    print("\nvtail_AR" , vtail_AR)
+    print("vtail span:chord", vtail_span, ":", vtail_chord)
+    print("elev volume", vtail_elev_volume, "rudder volume", vtail_rudder_volume)
+    vtail_pos: FloatArray = np.array(
+        [tail_pos_x - (1./4.)*vtail_chord, 0.0, 0.0],  
+        dtype=float,
+    )
+    vtail_orientantion: FloatArray = np.array(
+        [0.0, 0.0, vtail_angle],
+        dtype=float,
+    )
+
+    vtail = Wing_Segment(
+        name="vtail_1",
+        root_airfoil="NACA0008",
+        origin=origin + vtail_pos,
+        orientation=vtail_orientantion,
+        symmetries=SymmetryAxes.Y,
+        span = vtail_span,
+        sweep_offset=0,
+        root_dihedral_angle=0,
+        root_chord=vtail_chord,
+        tip_chord=vtail_chord,
+        N=8,
+        M=round(8/vtail_AR),
+        mass=mass_tail,
+    )
+
+
+    #DEFINE FINAL AIRPLANE
+    lifting_surfaces: list[Lifting_Surface] = [main_wing,
+                                                vtail]
+    #lifting_surfaces: list[Lifting_Surface] = [vtail]
+    airplane: Airplane = Airplane(name, lifting_surfaces)
+    airplane.add_point_masses(point_masses)
+    #vtail.plot()
+    airplane.visualize()
+    
+    return airplane
+
+    
+
+
+#--------------------------------MAIN FUNCTION------------------------  
+
+if __name__ == "__main__":
+    airplane = hermes_449("hermes", bounds["motor_x_clearance"][0], bounds["nose_x"][0],1.5*bounds["tail_pos_x"][0],
+                          bounds["vtail_elev_volume"][0],1.5*bounds["vtail_AR"][0],bounds["vtail_angle"][0],bounds["main_wing_LE_x"][0],
+                          0.8*bounds["chord_1"][1],bounds["chord_3"][0],2.3*bounds["length_1_perc"][0],bounds["length_3_perc"][0],
+                          bounds["incidence_angle"][0],10*bounds["twist"][0],5*bounds["dihedral"][0],bounds["offset_perc"][0],
+                          0.5*bounds["flap_L_perc"][1],bounds["flap_area_perc"][0],bounds["ail_area_perc"][0])
+    
+#TODO HANDLE 3 instead of 4 segments 
+
+ 
